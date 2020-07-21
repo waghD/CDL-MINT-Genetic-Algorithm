@@ -40,6 +40,7 @@ public class Main_harmony {
 
 		// Define Axis used by Test case
 		AxisStream[] axisArr = { AxisStream.GP, AxisStream.MAP, AxisStream.BP, AxisStream.SAP, AxisStream.WP };
+		
 		List<AxisStream> axisList = new ArrayList<AxisStream>(Arrays.asList(axisArr));
 
 		eval.setUpRealDataStream(axisList);

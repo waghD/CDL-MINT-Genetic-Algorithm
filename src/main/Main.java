@@ -20,12 +20,16 @@ import static java.lang.Math.cos;
 import static java.lang.Math.sin;
 import static io.jenetics.engine.EvolutionResult.toBestPhenotype;
 import static io.jenetics.engine.Limits.bySteadyFitness;
+
+import io.jenetics.DoubleChromosome;
 import io.jenetics.DoubleGene;
 import io.jenetics.Genotype;
 import io.jenetics.MeanAlterer;
 import io.jenetics.Mutator;
 import io.jenetics.Optimize;
 import io.jenetics.Phenotype;
+import io.jenetics.RouletteWheelSelector;
+import io.jenetics.TournamentSelector;
 import io.jenetics.engine.Codecs;
 import io.jenetics.engine.Engine;
 import io.jenetics.engine.EvolutionResult;
@@ -45,21 +49,45 @@ import timeSeries.TimeSeriesDatabase;
 
 public class Main {
 	
+
+	/*private static final String OUTPUT_DIRECTORY = "../harmonyresult";
+	private static final String TEST_NAME = "test_refactor";*/
+	private static final AxisStream[] axisArr = { AxisStream.GP, AxisStream.MAP, AxisStream.BP, AxisStream.SAP, AxisStream.WP };
+	private static List<AxisStream> axisList = null;
+	private static final List<String> statesToNotEvaluateList = new ArrayList<String>();
+
+	
 	// The fitness function.
-		private static double fitness(final double[] x) {
-			double sum = 0.0;
-			for(int i = 0; i < x.length; i++) {
-				sum += x[i];
+		private static double fitness(final Genotype<DoubleGene> x) {
+	
+			//Allele = Jenetic's wording for the actual gene values that
+			//are stored in a chromosome (in our case of type double) 
+			double[] alleles = x.chromosome().as(DoubleChromosome.class).toArray();
+			
+			Map<String,PropertyBoundaries> propertyMap = getSensorOffsetMap(alleles);
+			
+			List<EvaluationResult> resultList = performStateDetection(propertyMap);
+			double fMeasure = 0.0;
+			for (EvaluationResult res : resultList) {
+				fMeasure += res.getfMeasure() / resultList.size();
+				//newPrec += res.getPrecision() / newResult.size();
+				//newRec += res.getRecall() / newResult.size();
 			}
-			System.out.println(sum);
-			return sum;
+			return fMeasure;
 		}
 
-	// Set Output directory for Test
-	private static final String OUTPUT_DIRECTORY = "../harmonyresult";
-	private static final String TEST_NAME = "test_refactor";
 
 	public static void main(String[] args) {
+		
+		//Add sensors to use for detection here, derive of "AxisStream"-Class
+		setUpDatabase("./lib/Daten_156.csv", false, 0);
+		Evaluation eval = new Evaluation("./lib/realStates_156.csv");
+		
+		int nrOfSensors = axisArr.length;
+		axisList = new ArrayList<AxisStream>(Arrays.asList(axisArr));
+		
+		eval.setUpRealDataStream(axisList);
+
 		
 		//final Factory<Genotype<DoubleGene>> gtf = Genotype.of(DoubleChromosome.of())
 		
@@ -68,11 +96,14 @@ public class Main {
 				// function and chromosome.
 				.builder(
 					Main::fitness,
-					Codecs.ofVector(DoubleRange.of(0.0, 100.0)))
-				.populationSize(500)
-				.optimize(Optimize.MINIMUM)
+					DoubleChromosome.of(0.0,1.0,nrOfSensors*2))
+				.offspringFraction(0.7)
+				.survivorsSelector(new RouletteWheelSelector<>())
+				.offspringSelector(new TournamentSelector<>())
+				.populationSize(5)
+				.optimize(Optimize.MAXIMUM)
 				.alterers(
-					new Mutator<>(0.03),
+					new Mutator<>(0.8),
 					new MeanAlterer<>(0.6))
 				// Build an evolution engine with the
 				// defined parameters.
@@ -85,26 +116,85 @@ public class Main {
 			final ISeq<EvolutionResult<DoubleGene, Double>> best = engine.stream()
 				// Truncate the evolution stream after 7 "steady"
 				// generations.
-				.limit(bySteadyFitness(30))
+				//.limit(bySteadyFitness(5))
 				// The evolution will stop after maximal 100
 				// generations.
-				.limit(100)
+				.limit(1000)
 				// Update the evaluation statistics after
 				// each generation
 				.peek(statistics)
 				// Collect (reduce) the evolution stream to
 				// its best phenotype.
-				//.collect(toBestPhenotype());
-				.flatMap(MinMax.toStrictlyDecreasing())
+				//.collect(EvolutionResult.toBestEvolutionResult());
+				//.flatMap(MinMax.toStrictlyDecreasing())
+				.collect(ISeq.toISeq(1000));
 
-				.collect(ISeq.toISeq(10));
+				//.collect(ISeq.toISeq(10));
 			System.out.println(statistics);
-			//System.out.println(best.population());
-			for(EvolutionResult<DoubleGene, Double> result: best) {
+			ArrayList<EvolutionResult<DoubleGene,Double>> arrayList = new ArrayList<>(best.asList()); 
+			double fittestVal = 0.0;
+			for(int i = 0; i < arrayList.size(); i++ ) {
+				EvolutionResult<DoubleGene, Double> curResult = arrayList.get(i);
+				List<Phenotype<DoubleGene, Double>> solutions = curResult.population().asList();
+				for (int j = 0; j < solutions.size(); j++) {
+					Phenotype<DoubleGene, Double> curSol = solutions.get(j);
+					if(curSol.fitness() > fittestVal) {
+						System.out.println(i + ":");
+						System.out.println(curSol);
+						fittestVal = curSol.fitness();
+					}
+
+				}
+			}
+			System.out.println(fittestVal);
+
+			/*for(EvolutionResult<DoubleGene, Double> result: best) {
 				System.out.println(result.population());
 				System.out.println(result.population().size());
-			}
+			}*/
 	}
+	
+	private static List<EvaluationResult> performStateDetection(Map<String, PropertyBoundaries> sensorOffsetMap) {
+		Evaluation eval = Evaluation.instance;
+		// evaluate new solution
+		List<EvaluationResult> evalResults = eval.evaluate(TestData.setUpDataStream(axisList), sensorOffsetMap, false, statesToNotEvaluateList);
+		return evalResults;
+	}
+	private static Map<String, PropertyBoundaries> getSensorOffsetMap(double[] alleles) {
+		
+		Map<String, PropertyBoundaries> sensorOffsetMap = new HashMap<String, PropertyBoundaries>();
+
+		if (axisList.contains(AxisStream.BP)) {
+			sensorOffsetMap.put(AxisStream.BP.getAxisName(),
+					new PropertyBoundaries(alleles[0], alleles[1]));
+		}
+		
+		if (axisList.contains(AxisStream.GP)) {
+			sensorOffsetMap.put(AxisStream.GP.getAxisName(),
+					new PropertyBoundaries(alleles[2], alleles[3]));
+
+		}
+		
+		if (axisList.contains(AxisStream.MAP)) {
+			sensorOffsetMap.put(AxisStream.MAP.getAxisName(),
+					new PropertyBoundaries(alleles[4], alleles[5]));
+
+		}
+		
+		if (axisList.contains(AxisStream.SAP)) {
+			sensorOffsetMap.put(AxisStream.SAP.getAxisName(),
+					new PropertyBoundaries(alleles[6], alleles[7]));
+
+		}
+		
+		if (axisList.contains(AxisStream.WP)) {
+			sensorOffsetMap.put(AxisStream.WP.getAxisName(),
+					new PropertyBoundaries(alleles[8], alleles[9]));
+
+		}
+		return sensorOffsetMap;
+	}
+	
 
 	/**
 	 * Execute harmony search with given parameters and prints some information

@@ -43,24 +43,18 @@ public class TestData {
 
 		
 		try {
-			//Get Document Builder
 			DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
 			DocumentBuilder builder = factory.newDocumentBuilder();
-			//Build Document
 			Document document = builder.parse(new File(MODEL_FILE_PATH));
 			 
-			//Normalize the XML Structure; It's just too important !!
 			document.getDocumentElement().normalize();
-			//Here comes the root node
 			Element root = document.getDocumentElement();
 			 
-			//Get all employees
 			NodeList nList = document.getElementsByTagName("state");
 			for (int temp = 0; temp < nList.getLength(); temp++) {
 				 Node node = nList.item(temp);
 				 if (node.getNodeType() == Node.ELEMENT_NODE) {
 					
-					    //Print each employee's detail
 					    Element sElement = (Element) node;
 					    String stateName = sElement.getAttribute("name");
 						List<Property> props = new ArrayList<Property>(Arrays.asList(null, null, null, null, null));
