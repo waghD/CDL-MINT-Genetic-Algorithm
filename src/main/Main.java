@@ -58,6 +58,11 @@ public class Main {
 			AxisStream.WP };
 	private static List<AxisStream> axisList = null;
 	private static final List<String> statesToNotEvaluateList = new ArrayList<String>();
+	
+	// Test Output
+	private static final boolean OUTPUT_TO_FILE = true;
+	private static final String OUTPUT_DIRECTORY = "../genetic_result";
+	private static final String TEST_NAME = "test_output";
 
 	// The fitness function.
 	private static double fitness(final Genotype<DoubleGene> x) {
@@ -89,6 +94,25 @@ public class Main {
 
 		eval.setUpRealDataStream(axisList);
 
+		PrintStream outputFile = null;
+		PrintStream resultFile = null;
+		
+		// Create output directory
+		if(OUTPUT_TO_FILE) {
+			String outputDir = OUTPUT_DIRECTORY + "/" + TEST_NAME;
+			new File(outputDir).mkdirs();
+			
+			String fileBase = outputDir + "/" + TEST_NAME;
+			try { 
+				outputFile = new PrintStream(new FileOutputStream(fileBase + "_logs" + ".csv", true), true); 
+				resultFile = new PrintStream(new FileOutputStream(fileBase + "_result" + ".txt", true), true);
+				System.setOut(outputFile); 
+			} catch (IOException e) { 
+				System.err.print(e.getMessage());
+				e.printStackTrace();
+			}
+		}
+
 		// final Factory<Genotype<DoubleGene>> gtf = Genotype.of(DoubleChromosome.of())
 
 		final Engine<DoubleGene, Double> engine = Engine
@@ -107,6 +131,20 @@ public class Main {
 
 		// Create evolution statistics consumer.
 		final EvolutionStatistics<Double, ?> statistics = EvolutionStatistics.ofNumber();
+		
+		StringBuilder headerStr = new StringBuilder();
+		for(int i = 0; i < nrOfSensors; i++) {
+			headerStr.append("Sensor ");
+			headerStr.append(i);
+			headerStr.append(" Lower;");
+			headerStr.append("Sensor ");
+			headerStr.append(i);
+			headerStr.append(" Upper;");
+		}
+		
+		headerStr.append("F-Measure");
+		
+		System.out.println(headerStr);
 
 		final ISeq<EvolutionResult<DoubleGene, Double>> best = engine.stream()
 				// Truncate the evolution stream after 7 "steady"
@@ -139,6 +177,10 @@ public class Main {
 
 		// .collect(ISeq.toISeq(10));
 		
+		if(OUTPUT_TO_FILE) {
+			System.setOut(resultFile); 
+		}
+		
 		System.out.println(statistics);
 		ArrayList<EvolutionResult<DoubleGene, Double>> arrayList = new ArrayList<>(best.asList());
 		double fittestVal = 0.0;
@@ -162,6 +204,12 @@ public class Main {
 		 * System.out.println(result.population());
 		 * System.out.println(result.population().size()); }
 		 */
+		if(outputFile != null) {
+			outputFile.close();
+		}
+		if(resultFile != null) {
+			outputFile.close();
+		}
 	}
 
 	private static List<EvaluationResult> performStateDetection(Map<String, PropertyBoundaries> sensorOffsetMap) {
