@@ -21,6 +21,7 @@ import static java.lang.Math.sin;
 import static io.jenetics.engine.EvolutionResult.toBestPhenotype;
 import static io.jenetics.engine.Limits.bySteadyFitness;
 
+import io.jenetics.Chromosome;
 import io.jenetics.DoubleChromosome;
 import io.jenetics.DoubleGene;
 import io.jenetics.Genotype;
@@ -117,6 +118,19 @@ public class Main {
 				// Update the evaluation statistics after
 				// each generation
 				.peek(statistics)
+				.peek((evolutionResult) -> {
+					Phenotype<DoubleGene, Double> bestPheno = evolutionResult.bestPhenotype();
+					Genotype<DoubleGene> genum = bestPheno.genotype();
+					StringBuilder str = new StringBuilder();
+					for(Chromosome<DoubleGene> chromosome : genum) {
+						for(DoubleGene gene : chromosome) {
+							str.append(gene.doubleValue());
+							str.append(";");
+						}
+					}
+					str.append(bestPheno.fitness());
+					System.out.println(str);
+				})
 				// Collect (reduce) the evolution stream to
 				// its best phenotype.
 				// .collect(EvolutionResult.toBestEvolutionResult());
@@ -124,6 +138,7 @@ public class Main {
 				.collect(ISeq.toISeq(1000));
 
 		// .collect(ISeq.toISeq(10));
+		
 		System.out.println(statistics);
 		ArrayList<EvolutionResult<DoubleGene, Double>> arrayList = new ArrayList<>(best.asList());
 		double fittestVal = 0.0;
