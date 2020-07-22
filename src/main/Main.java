@@ -93,9 +93,13 @@ public class Main {
 		final Engine<DoubleGene, Double> engine = Engine
 				// Create a new builder with the given fitness
 				// function and chromosome.
-				.builder(Main::fitness, DoubleChromosome.of(0.0, 1.0, nrOfSensors * 2)).offspringFraction(0.7)
-				.survivorsSelector(new RouletteWheelSelector<>()).offspringSelector(new TournamentSelector<>())
-				.populationSize(5).optimize(Optimize.MAXIMUM).alterers(new Mutator<>(0.8), new MeanAlterer<>(0.6))
+				.builder(Main::fitness, DoubleChromosome.of(0.0, 1.0, nrOfSensors * 2))
+				.offspringFraction(0.7)
+				.survivorsSelector(new RouletteWheelSelector<>())
+				.offspringSelector(new TournamentSelector<>())
+				.populationSize(100)
+				.optimize(Optimize.MAXIMUM)
+				.alterers(new Mutator<>(0.1), new MeanAlterer<>(0.8))
 				// Build an evolution engine with the
 				// defined parameters.
 				.build();
