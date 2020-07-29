@@ -1,6 +1,7 @@
 package main;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -22,6 +23,7 @@ import io.jenetics.TournamentSelector;
 import io.jenetics.engine.Engine;
 import io.jenetics.engine.EvolutionResult;
 import io.jenetics.engine.EvolutionStatistics;
+import io.jenetics.stat.DoubleMomentStatistics;
 import io.jenetics.util.ISeq;
 
 import timeSeries.TimeSeriesDatabase;
@@ -43,7 +45,11 @@ public class Main {
 	private static final boolean OUTPUT_TO_FILE = true;
 	private static final String OUTPUT_DIRECTORY = "../genetic_result";
 	private static final String TEST_NAME = "output_test";
-	private static final int TEST_COUNT = 5;
+	private static final int TEST_COUNT = 3;
+	private static final int populationSize = 100;
+	private static final double mutationPropability = 0.1;
+	private static final double crossoverPropability = 0.8;
+
 
 	// The fitness function.
 	private static double fitness(final Genotype<DoubleGene> genotype) {
@@ -72,11 +78,11 @@ public class Main {
 		return fMeasure;
 	}
 
-	public static void main(String[] args) {
+	public static void main(String[] args) throws FileNotFoundException {
 
 		// Add sensors to use for detection here, derive of "AxisStream"-Class
-		setUpDatabase("./lib/Daten_156.csv", false, 0);
-		Evaluation eval = new Evaluation("./lib/realStates_156.csv");
+		setUpDatabase("./lib/Daten_12_156.csv", false, 0);
+		Evaluation eval = new Evaluation("./lib/realStates_12_156.csv");
 
 		int nrOfSensors = axisArr.length;
 		axisList = new ArrayList<AxisStream>(Arrays.asList(axisArr));
@@ -88,16 +94,27 @@ public class Main {
 		final Engine<DoubleGene, Double> engine = Engine
 				// Create a new builder with the given fitness
 				// function and chromosome.
-				.builder(Main::fitness, Genotype.of(DoubleChromosome.of(0.0, 1.0, 2), nrOfSensors))
-				.offspringFraction(0.7)
-				.survivorsSelector(new TournamentSelector<>(5))
-				.offspringSelector(new TournamentSelector<>(5))
-				.populationSize(100)
+				.builder(Main::fitness, Genotype.of(DoubleChromosome.of(0.0, 0.4, 2* nrOfSensors)))
+				.offspringFraction(0.6)
+				.survivorsSelector(new TournamentSelector<>())
+				.offspringSelector(new TournamentSelector<>())
+				.populationSize(populationSize)
 				.optimize(Optimize.MAXIMUM)
-				.alterers(new GaussianMutator<>(0.1), new SinglePointCrossover<>(0.8))
+				.alterers(new GaussianMutator<>(mutationPropability), new SinglePointCrossover<>(crossoverPropability))
 				.build();
 
+		//Save statistics per repetition
+
+		List<EvolutionStatistics<Double, DoubleMomentStatistics>> statisticsList = new ArrayList<EvolutionStatistics<Double, DoubleMomentStatistics>>();
+
 		// Exec algorithm multiple times for test
+		PrintStream averagedStatsFile = null;
+
+		averagedStatsFile = new PrintStream(
+				new FileOutputStream(OUTPUT_DIRECTORY + "/" + TEST_NAME + "_" + "_averagedResult" + ".txt", true), true);
+
+		long startTime = System.nanoTime();
+
 		for (int iteration = 0; iteration < TEST_COUNT; iteration++) {
 
 			PrintStream outputFile = null;
@@ -143,7 +160,7 @@ public class Main {
 					// .limit(bySteadyFitness(5))
 					// The evolution will stop after maximal 1000
 					// generations.
-					.limit(1000)
+					.limit(200)
 					// Update the evaluation statistics after
 					// each generation
 					.peek(statistics)
@@ -165,7 +182,7 @@ public class Main {
 					// its best phenotype.
 					// .collect(EvolutionResult.toBestEvolutionResult());
 					// .flatMap(MinMax.toStrictlyDecreasing())
-					.collect(ISeq.toISeq(1000));
+					.collect(ISeq.toISeq(100000));
 
 			// .collect(ISeq.toISeq(10));
 
@@ -174,23 +191,32 @@ public class Main {
 			}
 
 			System.out.println(statistics);
+			System.out.println("\n=> populationSize: " + populationSize);
+			System.out.println("=> mutationPropability: " + mutationPropability);
+			System.out.println("=> crossoverPropability: " + crossoverPropability + "\n");
+
+	
+			statisticsList.add((EvolutionStatistics<Double, DoubleMomentStatistics>) statistics);
+			
 			ArrayList<EvolutionResult<DoubleGene, Double>> arrayList = new ArrayList<>(best.asList());
-			double fittestVal = 0.0;
+			int reachedOptimumIteration = 0;
 			for (int i = 0; i < arrayList.size(); i++) {
 				EvolutionResult<DoubleGene, Double> curResult = arrayList.get(i);
 				List<Phenotype<DoubleGene, Double>> solutions = curResult.population().asList();
 				for (int j = 0; j < solutions.size(); j++) {
 					Phenotype<DoubleGene, Double> curSol = solutions.get(j);
-					if (curSol.fitness() > fittestVal) {
-						System.out.println(i + ":");
+					//if (curSol.fitness() > fittestVal) {
+						//System.out.println(i + ":");
 						System.out.println(curSol);
-						fittestVal = curSol.fitness();
-					}
+						if(reachedOptimumIteration == 0 && curSol.fitness() == 1.0) {
+							reachedOptimumIteration = i+1;
+						}
+					//}
 
 				}
 			}
-			System.out.println(fittestVal);
-
+			System.out.println("\n=> Found optimum in iteration " + reachedOptimumIteration);
+			
 			/*
 			 * for(EvolutionResult<DoubleGene, Double> result: best) {
 			 * System.out.println(result.population());
@@ -203,7 +229,52 @@ public class Main {
 				outputFile.close();
 			}
 		}
+		
+		System.setOut(averagedStatsFile);
+		
+		System.out.println(averagedEvaluationStatistic(statisticsList));
+
+		System.out.println("\n => Overall execution time in seconds: " +
+								(System.nanoTime() - startTime) / 1000000000);
+		if (averagedStatsFile != null) {
+			averagedStatsFile.close();
+		}
+		
 	}
+	
+	private static EvolutionStatistics<Double, DoubleMomentStatistics> averagedEvaluationStatistic(List<EvolutionStatistics<Double, DoubleMomentStatistics>> statisticsList) {
+		System.out.println("+---------------------------------------------------------------------------+");
+		System.out.println("|  Time statistics                                                          |");
+		System.out.println("+---------------------------------------------------------------------------+");
+		double selectionSum = 0, selectionMean = 0, alteringSum, alteringMean, fitnessCalculationSum, fitnessCalculationMean, overallExecutionSum, overallExecutionMean;
+		double generations, altered, killed, invalids;
+		EvolutionStatistics<Double, DoubleMomentStatistics> firstRes = statisticsList.get(0);
+		for(int i = 1; i < statisticsList.size(); i++) {
+			EvolutionStatistics<Double, DoubleMomentStatistics> curStat = statisticsList.get(i);
+
+			firstRes.alterDuration().combine(curStat.alterDuration());
+			firstRes.selectionDuration().combine(curStat.selectionDuration());
+			firstRes.evolveDuration().combine(curStat.evolveDuration());
+			firstRes.evaluationDuration().combine(curStat.evaluationDuration());
+			firstRes.altered().combine(curStat.altered());
+			firstRes.killed().combine(curStat.killed());
+			firstRes.invalids().combine(curStat.invalids());
+			firstRes.phenotypeAge().combine(curStat.phenotypeAge());
+			firstRes.selectionDuration().combine(curStat.selectionDuration());
+			firstRes.fitness().combine(curStat.fitness());
+
+		}
+		return firstRes;
+	}
+	
+	
+	private static String d(final DoubleMomentStatistics statistics) {
+		return java.lang.String.format(
+			"sum=%3.12f s; mean=%3.12f s",
+			statistics.sum(), statistics.mean()
+		);
+	}
+
 
 	private static List<EvaluationResult> performStateDetection(Map<String, PropertyBoundaries> sensorOffsetMap) {
 		Evaluation eval = Evaluation.instance;
