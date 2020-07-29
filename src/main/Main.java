@@ -12,14 +12,17 @@ import java.util.List;
 import java.util.Map;
 
 import io.jenetics.Chromosome;
+import io.jenetics.Crossover;
 import io.jenetics.DoubleChromosome;
 import io.jenetics.DoubleGene;
 import io.jenetics.GaussianMutator;
 import io.jenetics.Genotype;
+import io.jenetics.MultiPointCrossover;
 import io.jenetics.Optimize;
 import io.jenetics.Phenotype;
 import io.jenetics.SinglePointCrossover;
 import io.jenetics.TournamentSelector;
+import io.jenetics.UniformCrossover;
 import io.jenetics.engine.Engine;
 import io.jenetics.engine.EvolutionResult;
 import io.jenetics.engine.EvolutionStatistics;
@@ -44,11 +47,9 @@ public class Main {
 	// Test Output
 	private static final boolean OUTPUT_TO_FILE = true;
 	private static final String OUTPUT_DIRECTORY = "../genetic_result";
-	private static final String TEST_NAME = "output_test";
-	private static final int TEST_COUNT = 3;
+	private static final String TEST_NAME = "states_12";
+	private static final int TEST_COUNT = 10;
 	private static final int populationSize = 100;
-	private static final double mutationPropability = 0.1;
-	private static final double crossoverPropability = 0.8;
 
 
 	// The fitness function.
@@ -88,157 +89,178 @@ public class Main {
 		axisList = new ArrayList<AxisStream>(Arrays.asList(axisArr));
 
 		eval.setUpRealDataStream(axisList);
+	
+		final List<Double> mutationPropabilityList = new ArrayList<Double>(Arrays.asList(0.05));
+		final List<Crossover> crossoverMethodList = new ArrayList<Crossover>(
+					Arrays.asList(
+							new SinglePointCrossover(0.8), 
+							new SinglePointCrossover(0.9),
+							new MultiPointCrossover(0.8),
+							new MultiPointCrossover(0.9),
+							new UniformCrossover(0.8),
+							new UniformCrossover(0.9)
+						)
+		);
 
 		// final Factory<Genotype<DoubleGene>> gtf = Genotype.of(DoubleChromosome.of())
+		for (double mutProp: mutationPropabilityList) {
+			for (Crossover crossoverMethod: crossoverMethodList) {
+					
+						
+				
+				final Engine<DoubleGene, Double> engine = Engine
+						// Create a new builder with the given fitness
+						// function and chromosome.
+						.builder(Main::fitness, Genotype.of(DoubleChromosome.of(0.0, 0.4, 2* nrOfSensors)))
+						.offspringFraction(0.6)
+						.survivorsSelector(new TournamentSelector<>())
+						.offspringSelector(new TournamentSelector<>())
+						.populationSize(populationSize)
+						.optimize(Optimize.MAXIMUM)
+						.alterers(new GaussianMutator<>(mutProp), crossoverMethod)
+						.build();
 
-		final Engine<DoubleGene, Double> engine = Engine
-				// Create a new builder with the given fitness
-				// function and chromosome.
-				.builder(Main::fitness, Genotype.of(DoubleChromosome.of(0.0, 0.4, 2* nrOfSensors)))
-				.offspringFraction(0.6)
-				.survivorsSelector(new TournamentSelector<>())
-				.offspringSelector(new TournamentSelector<>())
-				.populationSize(populationSize)
-				.optimize(Optimize.MAXIMUM)
-				.alterers(new GaussianMutator<>(mutationPropability), new SinglePointCrossover<>(crossoverPropability))
-				.build();
+				//Save statistics per repetition
 
-		//Save statistics per repetition
+				List<EvolutionStatistics<Double, DoubleMomentStatistics>> statisticsList = new ArrayList<EvolutionStatistics<Double, DoubleMomentStatistics>>();
 
-		List<EvolutionStatistics<Double, DoubleMomentStatistics>> statisticsList = new ArrayList<EvolutionStatistics<Double, DoubleMomentStatistics>>();
+				// Exec algorithm multiple times for test
+				PrintStream averagedStatsFile = null;
 
-		// Exec algorithm multiple times for test
-		PrintStream averagedStatsFile = null;
+				averagedStatsFile = new PrintStream(
+						new FileOutputStream(OUTPUT_DIRECTORY + "/" + TEST_NAME + "_" + mutProp + "_"+ crossoverMethod.getClass().getSimpleName() + "_" +crossoverMethod.probability() +  "_averagedResult" + ".txt", true), true);
 
-		averagedStatsFile = new PrintStream(
-				new FileOutputStream(OUTPUT_DIRECTORY + "/" + TEST_NAME + "_" + "_averagedResult" + ".txt", true), true);
+				long startTime = System.nanoTime();
 
-		long startTime = System.nanoTime();
+				for (int iteration = 0; iteration < TEST_COUNT; iteration++) {
 
-		for (int iteration = 0; iteration < TEST_COUNT; iteration++) {
+					PrintStream outputFile = null;
+					PrintStream resultFile = null;
 
-			PrintStream outputFile = null;
-			PrintStream resultFile = null;
+					// Create output directory
+					if (OUTPUT_TO_FILE) {
+						String outputDir = OUTPUT_DIRECTORY + "/" + TEST_NAME;
+						new File(outputDir).mkdirs();
 
-			// Create output directory
-			if (OUTPUT_TO_FILE) {
-				String outputDir = OUTPUT_DIRECTORY + "/" + TEST_NAME;
-				new File(outputDir).mkdirs();
-
-				String fileBase = outputDir + "/" + TEST_NAME;
-				try {
-					outputFile = new PrintStream(
-							new FileOutputStream(fileBase + "_" + iteration + "_logs" + ".csv", true), true);
-					resultFile = new PrintStream(
-							new FileOutputStream(fileBase + "_" + iteration + "_result" + ".txt", true), true);
-					System.setOut(outputFile);
-				} catch (IOException e) {
-					System.err.print(e.getMessage());
-					e.printStackTrace();
-				}
-			}
-
-			// Create evolution statistics consumer.
-			final EvolutionStatistics<Double, ?> statistics = EvolutionStatistics.ofNumber();
-
-			StringBuilder headerStr = new StringBuilder();
-			for (int i = 0; i < axisArr.length; i++) {
-
-				headerStr.append(axisArr[i].getAxisName() + " ");
-				headerStr.append(" lower;");
-				headerStr.append(axisArr[i].getAxisName() + " ");
-				headerStr.append(" upper;");
-			}
-
-			headerStr.append("F-Measure");
-
-			System.out.println(headerStr);
-
-			final ISeq<EvolutionResult<DoubleGene, Double>> best = engine.stream()
-					// Truncate the evolution stream after 7 "steady"
-					// generations.
-					// .limit(bySteadyFitness(5))
-					// The evolution will stop after maximal 1000
-					// generations.
-					.limit(200)
-					// Update the evaluation statistics after
-					// each generation
-					.peek(statistics)
-					// print generation log
-					.peek((evolutionResult) -> {
-						Phenotype<DoubleGene, Double> bestPheno = evolutionResult.bestPhenotype();
-						Genotype<DoubleGene> genum = bestPheno.genotype();
-						StringBuilder str = new StringBuilder();
-						for (Chromosome<DoubleGene> chromosome : genum) {
-							for (DoubleGene gene : chromosome) {
-								str.append(gene.doubleValue());
-								str.append(";");
-							}
+						String fileBase = outputDir + "/" + TEST_NAME;
+						try {
+							outputFile = new PrintStream(
+									new FileOutputStream(fileBase  + "_" + mutProp + "_" + crossoverMethod.getClass().getSimpleName() + "_" +  crossoverMethod.probability() + "_" + iteration + "_logs" + ".csv", true), true);
+							resultFile = new PrintStream(
+									new FileOutputStream(fileBase +  "_" + mutProp + "_" + crossoverMethod.getClass().getSimpleName() + "_" + crossoverMethod.probability() + "_" + iteration + "_result" + ".txt", true), true);
+							System.setOut(outputFile);
+						} catch (IOException e) {
+							System.err.print(e.getMessage());
+							e.printStackTrace();
 						}
-						str.append(bestPheno.fitness());
-						System.out.println(str);
-					})
-					// Collect (reduce) the evolution stream to
-					// its best phenotype.
-					// .collect(EvolutionResult.toBestEvolutionResult());
-					// .flatMap(MinMax.toStrictlyDecreasing())
-					.collect(ISeq.toISeq(100000));
+					}
 
-			// .collect(ISeq.toISeq(10));
+					// Create evolution statistics consumer.
+					final EvolutionStatistics<Double, ?> statistics = EvolutionStatistics.ofNumber();
 
-			if (OUTPUT_TO_FILE) {
-				System.setOut(resultFile);
-			}
+					StringBuilder headerStr = new StringBuilder();
+					for (int i = 0; i < axisArr.length; i++) {
 
-			System.out.println(statistics);
-			System.out.println("\n=> populationSize: " + populationSize);
-			System.out.println("=> mutationPropability: " + mutationPropability);
-			System.out.println("=> crossoverPropability: " + crossoverPropability + "\n");
+						headerStr.append(axisArr[i].getAxisName() + " ");
+						headerStr.append(" lower;");
+						headerStr.append(axisArr[i].getAxisName() + " ");
+						headerStr.append(" upper;");
+					}
 
-	
-			statisticsList.add((EvolutionStatistics<Double, DoubleMomentStatistics>) statistics);
+					headerStr.append("F-Measure");
+
+					System.out.println(headerStr);
+
+					final ISeq<EvolutionResult<DoubleGene, Double>> best = engine.stream()
+							// Truncate the evolution stream after 7 "steady"
+							// generations.
+							// .limit(bySteadyFitness(5))
+							// The evolution will stop after maximal 1000
+							// generations.
+							.limit(500)
+							// Update the evaluation statistics after
+							// each generation
+							.peek(statistics)
+							// print generation log
+							.peek((evolutionResult) -> {
+								Phenotype<DoubleGene, Double> bestPheno = evolutionResult.bestPhenotype();
+								Genotype<DoubleGene> genum = bestPheno.genotype();
+								StringBuilder str = new StringBuilder();
+								for (Chromosome<DoubleGene> chromosome : genum) {
+									for (DoubleGene gene : chromosome) {
+										str.append(gene.doubleValue());
+										str.append(";");
+									}
+								}
+								str.append(bestPheno.fitness());
+								System.out.println(str);
+							})
+							// Collect (reduce) the evolution stream to
+							// its best phenotype.
+							// .collect(EvolutionResult.toBestEvolutionResult());
+							// .flatMap(MinMax.toStrictlyDecreasing())
+							.collect(ISeq.toISeq());
+
+					// .collect(ISeq.toISeq(10));
+
+					if (OUTPUT_TO_FILE) {
+						System.setOut(resultFile);
+					}
+
+					
+					System.out.println(statistics);
+					System.out.println("\n=> populationSize: " + populationSize);
+					System.out.println("=> mutationPropability: " + mutProp);
+					System.out.println("=> crossoverPropability: " + crossoverMethod.probability() + "\n");
+
 			
-			ArrayList<EvolutionResult<DoubleGene, Double>> arrayList = new ArrayList<>(best.asList());
-			int reachedOptimumIteration = 0;
-			for (int i = 0; i < arrayList.size(); i++) {
-				EvolutionResult<DoubleGene, Double> curResult = arrayList.get(i);
-				List<Phenotype<DoubleGene, Double>> solutions = curResult.population().asList();
-				for (int j = 0; j < solutions.size(); j++) {
-					Phenotype<DoubleGene, Double> curSol = solutions.get(j);
-					//if (curSol.fitness() > fittestVal) {
-						//System.out.println(i + ":");
-						System.out.println(curSol);
-						if(reachedOptimumIteration == 0 && curSol.fitness() == 1.0) {
-							reachedOptimumIteration = i+1;
+					statisticsList.add((EvolutionStatistics<Double, DoubleMomentStatistics>) statistics);
+					
+					ArrayList<EvolutionResult<DoubleGene, Double>> arrayList = new ArrayList<>(best.asList());
+					int reachedOptimumIteration = 0;
+					double bestFitness = 0.0;
+					for (int i = 0; i < arrayList.size(); i++) {
+						EvolutionResult<DoubleGene, Double> curResult = arrayList.get(i);
+						List<Phenotype<DoubleGene, Double>> solutions = curResult.population().asList();
+						for (int j = 0; j < solutions.size(); j++) {
+							Phenotype<DoubleGene, Double> curSol = solutions.get(j);
+							//if (curSol.fitness() > fittestVal) {
+								//System.out.println(i + ":");
+								System.out.println(curSol);
+								if(reachedOptimumIteration == 0 && curSol.fitness() == 1.0) {
+									reachedOptimumIteration = i+1;
+								}
+							//}
+
 						}
-					//}
-
+					}
+					System.out.println("\n=> Found optimum in iteration " + reachedOptimumIteration);
+					
+					/*
+					 * for(EvolutionResult<DoubleGene, Double> result: best) {
+					 * System.out.println(result.population());
+					 * System.out.println(result.population().size()); }
+					 */
+					if (outputFile != null) {
+						outputFile.close();
+					}
+					if (resultFile != null) {
+						outputFile.close();
+					}
 				}
-			}
-			System.out.println("\n=> Found optimum in iteration " + reachedOptimumIteration);
-			
-			/*
-			 * for(EvolutionResult<DoubleGene, Double> result: best) {
-			 * System.out.println(result.population());
-			 * System.out.println(result.population().size()); }
-			 */
-			if (outputFile != null) {
-				outputFile.close();
-			}
-			if (resultFile != null) {
-				outputFile.close();
+				
+				System.setOut(averagedStatsFile);
+				
+				System.out.println(averagedEvaluationStatistic(statisticsList));
+
+				System.out.println("\n => Overall execution time in seconds: " +
+										(System.nanoTime() - startTime) / 1000000000);
+				if (averagedStatsFile != null) {
+					averagedStatsFile.close();
+				}
 			}
 		}
 		
-		System.setOut(averagedStatsFile);
-		
-		System.out.println(averagedEvaluationStatistic(statisticsList));
-
-		System.out.println("\n => Overall execution time in seconds: " +
-								(System.nanoTime() - startTime) / 1000000000);
-		if (averagedStatsFile != null) {
-			averagedStatsFile.close();
-		}
 		
 	}
 	
