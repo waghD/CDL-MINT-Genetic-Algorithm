@@ -24,7 +24,7 @@ import design.State;
 
 public class TestData {
 
-	public static String MODEL_FILE_PATH = "model/System4.xmi";
+	public static String MODEL_FILE_PATH = "model/System03.xmi";
 	private static Block cachedStates;
 	/**
 	 * Sets up block object with data streams
